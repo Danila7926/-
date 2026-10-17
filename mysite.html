@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Секретный чат: Вскрыть</title>
+  <style>
+    :root {
+      --bg-color: #0a0a0a;
+      --accent: #bb86fc;
+      --card-bg: rgba(20, 20, 30, 0.5);
+      --active-card-bg: rgba(30, 30, 50, 0.9);
+      
+      --msg-sealed: rgba(40, 40, 50, 0.8);
+      --msg-border-sealed: rgba(255,255,255,0.1);
+      
+      --msg-me: rgba(187, 134, 252, 0.15);
+      --msg-other: rgba(255, 255, 255, 0.08);
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg-color);
+      color: white;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      position: relative;
+    }
+
+    /* --- Интерфейс --- */
+    .toggle-slender-btn {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      z-index: 10;
+      font-weight: 500;
+    }
+    .settings-fixed {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 9999;
+    }
+    .settings-icon {
+      font-size: 24px;
+      cursor: pointer;
+      color: var(--accent);
+    }
+
+    /* --- Свайп зона --- */
+    .friends-swipe-container {
+      width: 100%;
+      height: calc(100% - 80px);
+      position: absolute;
+      top: 40px;
+      left: 0;
+      display: flex;
+      overflow-x: scroll;
+      scroll-snap-type: x mandatory;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    .friends-swipe-container::-webkit-scrollbar { display: none; }
+
+    .friend-card {
+      min-width: 100%;
+      height: 100%;
+      padding: 20px;
+      box-sizing: border-box;
+      scroll-snap-align: start;
+      background: var(--card-bg);
+      border: 1px solid rgba(255,255,255,0.1);
+      backdrop-filter: blur(8px);
+      opacity: 0.6;
+      transform: scale(0.95);
+      transition: all 0.3s ease;
+    }
+    .friend-card.active {
+      opacity: 1;
+      transform: scale(1);
+      background: var(--active-card-bg);
+    }
+    .friend-header { display: none; } /* Скрываем имена */
+
+    .chat-area {
+      height: calc(100% - 120px);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding-bottom: 12px;
+      justify-content: flex-end;
+      overflow-y: auto;
+    }
+
+    /* --- Сообщения --- */
+    .message-bubble {
+      max-width: 85%;
+      padding: 14px 18px;
+      border-radius: 14px;
+      line-height: 1.4;
+      font-size: 0.95rem;
+      position: relative;
+      animation: popIn 0.25s cubic-bezier(0.25, 1, 0.5, 1);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    @keyframes popIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* СОСТОЯНИЕ ЗАПЕЧАТАНО */
+    .sealed {
+      background: var(--msg-sealed);
+      border: 1px solid var(--msg-border-sealed);
+      color: transparent; /* Текст невидим */
+      cursor: default;
+    }
+    /* Иконка замка для запечатанного */
+    .sealed::before {
+      content: "🔒";
+      font-size: 1rem;
+      opacity: 0.6;
+      align-self: center;
+      margin-bottom: 4px;
+    }
+
+    /* СОСТОЯНИЕ ВСКРЫТО */
+    .unsealed.me-msg {
+      background: var(--msg-me);
+      border: 1px solid rgba(187, 134, 252, 0.4);
+      color: #ffffff;
+    }
+    .unsealed.other-msg {
+      background: var(--msg-other);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #ffffff;
+    }
+    .unsealed::before { content: none; } /* Замок исчезает */
+
+    .align-right { align-self: flex-end; }
+    .align-left { align-self: flex-start; }
+
+    /* Кнопка ВСКРЫТЬ */
+    .reveal-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #aaa;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      align-self: flex-start;
+      transition: all 0.2s;
+    }
+    .reveal-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      border-color: white;
+    }
+
+    /* --- Клавиатура (прозрачный ввод) --- */
+    .transparent-keyboard {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 220px;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(10px);
+      padding: 12px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .input-row { display: flex; gap: 8px; }
+    
+    .text-input {
+      flex: 1;
+      padding: 12px 16px;
+      background: rgba(255, 255, 255, 0.05); 
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: transparent; /* ГЛАВНОЕ: текст при вводе не виден */
+      caret-color: white; /* Но курсор белый */
+      border-radius: 8px;
+      outline: none;
+      font-size: 1rem;
+    }
+    .text-input:focus { border-color: var(--accent); }
+
+    .send-btn {
+      padding: 0 20px;
+      background: var(--accent);
+      color: black;
+      border: none;
+      border-radius: 8px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    /* --- Режим Слендер (полное исчезновение) --- */
+    body.slender-mode .friends-swipe-container,
+    body.slender-mode .transparent-keyboard,
+    body.slender-mode .friend-card,
+    body.slender-mode .chat-area,
+    body.slender-mode .message-bubble,
+    body.slender-mode .input-row,
+    body.slender-mode .text-input,
+    body.slender-mode .send-btn,
+    body.slender-mode .reveal-btn,
+    body.slender-mode .friend-header {
+      opacity: 0 !important;
+      pointer-events: none;
+      transform: scale(0.8) translateY(20px) !important;
+      transition: opacity 0.4s ease, transform 0.4s ease;
+    }
+    body.slender-mode .settings-fixed .settings-icon {
+      opacity: 1 !important;
+      transform: none !important;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Кнопка режима Слендер -->
+  <button class="toggle-slender-btn" id="btn-slender">Режим инкогнито Слендер</button>
+
+  <!-- Настройки -->
+  <div class="settings-fixed">
+    <span class="settings-icon" title="Настройки" id="btn-settings">⚙️</span>
+  </div>
+
+  <!-- Свайп зона -->
+  <div class="friends-swipe-container" id="swipeContainer"></div>
+
+  <!-- Клавиатура -->
+  <div class="transparent-keyboard">
+    <div class="input-row">
+      <input type="text" class="text-input" placeholder="..." id="msgInput" autocomplete="off">
+      <button class="send-btn" id="sendBtn">➤</button>
+    </div>
+  </div>
+
+  <script>
+    const swipeContainer = document.getElementById('swipeContainer');
+    const msgInput = document.getElementById('msgInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const btnSlender = document.getElementById('btn-slender');
+    const body = document.body;
+
+    // Список друзей (в коде есть, но на экране скрыты)
+    const friends = [
+      { id: 'IK', name: 'Илья Клянков' },
+      { id: 'DK', name: 'Денис Кукушкин' },
+      { id: 'VK', name: 'Валентина Казакова' },
+      { id: 'VP', name: 'В. В. Путин' }
+    ];
+
+    let currentFriendIndex = 0;
+
+    // Рендер карточек
+    function renderFriends() {
+      swipeContainer.innerHTML = '';
+      friends.forEach((f, idx) => {
+        const card = document.createElement('div');
+        card.className = `friend-card ${idx === currentFriendIndex ? 'active' : ''}`;
+        // friend-header скрыт через CSS (display:none), так что имени не видно
+        card.innerHTML = `
+          <div class="friend-header">
+            <div class="avatar" style="display:none;">${f.id}</div>
+            <span class="friend-name" style="display:none;">${f.name}</span>
+          </div>
+          <div class="chat-area" id="chat-${f.id}"></div>
+        `;
+        swipeContainer.appendChild(card);
+      });
+    }
+
+    function updateActiveCard() {
+      const cards = document.querySelectorAll('.friend-card');
+      cards.forEach((c, i) => c.classList.toggle('active', i === currentFriendIndex));
+      if (cards[currentFriendIndex]) cards[currentFriendIndex].scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // Логика свайпа (мышь/тач)
+    let startX, startPos;
+    swipeContainer.addEventListener('mousedown', e => { startX = e.clientX; startPos = swipeContainer.scrollLeft; });
+    window.addEventListener('mousemove', e => { if (!startX) return; swipeContainer.scrollLeft = startPos + (startX - e.clientX); });
+    window.addEventListener('mouseup', () => { snapToCard(); startX = null; });
+
+    swipeContainer.addEventListener('touchstart', e => { startX = e.touches[0].clientX; startPos = swipeContainer.scrollLeft; }, { passive: false });
+    swipeContainer.addEventListener('touchmove', e => { if (!startX) return; swipeContainer.scrollLeft = startPos + (startX - e.touches[0].clientX); }, { passive: false });
+    swipeContainer.addEventListener('touchend', () => { snapToCard(); startX = null; });
+
+    function snapToCard() {
+      const cards = Array.from(document.querySelectorAll('.friend-card'));
+      if (!cards.length) return;
+      const containerRect = swipeContainer.getBoundingClientRect();
+      const middleX = swipeContainer.scrollLeft + containerRect.width / 2;
+      let targetIndex = 0, minDist = Infinity;
+      cards.forEach((card, i) => {
+        const rect = card.getBoundingClientRect();
+        const centerX = swipeContainer.scrollLeft + rect.left + rect.width / 2;
+        const dist = Math.abs(centerX - middleX);
+        if (dist < minDist) { minDist = dist; targetIndex = i; }
+      });
+      currentFriendIndex = Math.max(0, Math.min(friends.length - 1, targetIndex));
+      updateActiveCard();
+    }
+
+    // Функция вскрытия сообщения
+    function revealMessage(btn) {
+      const bubble = btn.closest('.message-bubble');
+      bubble.classList.remove('sealed');
+      // Добавляем класс для цвета в зависимости от того, кто написал
+      if (bubble.classList.contains('me-msg')) {
+        bubble.classList.add('unsealed', 'me-msg');
+      } else {
+        bubble.classList.add('unsealed', 'other-msg');
+      }
+      btn.style.display = 'none'; // Скрываем кнопку
+    }
+
+    // Создание пузыря сообщения
+    function createMessageBubble(text, isMe) {
+      const chatArea = document.getElementById(`chat-${friends[currentFriendIndex].id}`);
+      
+      const bubble = document.createElement('div');
+      // По умолчанию все сообщения запечатаны (sealed)
+      bubble.className = `message-bubble ${isMe ? 'align-right me-msg sealed' : 'align-left other-msg sealed'}`;
+      bubble.textContent = text; // Текст есть в DOM, но прозрачный по CSS
+      
+      // Кнопка "Вскрыть" (добавляем к каждому сообщению)
+      const revealBtn = document.createElement('button');
+      revealBtn.className = 'reveal-btn';
+      revealBtn.textContent = 'Вскрыть';
+      revealBtn.onclick = () => revealMessage(revealBtn);
+      
+      bubble.appendChild(revealBtn);
+      chatArea.appendChild(bubble);
+      
+      chatArea.lastElementChild.scrollIntoView({ block: 'end' });
+      return bubble;
+    }
+
+    // Отправка твоего сообщения
+    function sendMessage() {
+      const text = msgInput.value.trim();
+      if (!text) return;
+
+      // 1. Создаём ТВОЁ сообщение (сразу запечатанное + кнопка Вскрыть)
+      createMessageBubble(text, true);
+      msgInput.value = '';
+
+      // 2. Имитация бота (через случайную задержку)
+      setTimeout(() => {
+        const replies = [
+          "Хм... Это интересно.", 
+          "Понял. Расскажи ещё.", 
+          "Звучит как план, но есть нюанс.",
+          "Я тут, но пока не готов это читать без кнопки.",
+          "Дай мне секунду... или лучше нажми «Вскрыть»."
+        ];
+        const replyText = replies[Math.floor(Math.random() * replies.length)];
+        
+        // Создаём сообщение БОТА (тоже запечатанное + кнопка Вскрыть)
+        createMessageBubble(replyText, false);
+      }, 1200 + Math.random() * 1500);
